@@ -35,7 +35,7 @@ class EncoderModule(nn.Module):
 
 if __name__ == "__main__":
     import cv2
-    from utils import postprocess_images, preprocess_images
+    from utils import preprocess_images
 
     encoder = EncoderModule()
     images = ["test_images/sample1.png", "test_images/sample2.png"]
