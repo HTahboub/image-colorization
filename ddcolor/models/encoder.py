@@ -5,7 +5,7 @@ from transformers import AutoImageProcessor, ConvNextModel
 
 class EncoderModule(nn.Module):
     def __init__(self, model_name: str = "facebook/convnext-tiny-224"):
-        super(EncoderModule, self).__init__()
+        super().__init__()
         self.image_processor = AutoImageProcessor.from_pretrained(model_name)
         self.model = ConvNextModel.from_pretrained(model_name)
 
