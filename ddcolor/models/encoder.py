@@ -22,9 +22,9 @@ class EncoderModule(nn.Module):
 
         Returns:
             torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor: dimensions
-            (B, 96, H/4, W/4), (B, 192, H/8, W/8), (B, 384, H/16, W/16), and
-            (B, 768, H/32, W/32), respectively, representing the hidden states of the
-            encoder.
+                (B, 96, H/4, W/4), (B, 192, H/8, W/8), (B, 384, H/16, W/16), and
+                (B, 768, H/32, W/32), respectively, representing the hidden states of
+                the encoder.
         """
         assert grayscale_image.shape[1:] == (3, 224, 224)
         inputs = self.image_processor(grayscale_image, return_tensors="pt")

@@ -13,12 +13,12 @@ from pixeldecoder import PixelDecoder
 class DDColor(nn.Module):
     def __init__(
         self,
-        encoder_name="facebook/convnext-tiny-224",
-        embedding_dim=256,
+        encoder_name: str = "facebook/convnext-tiny-224",
+        embedding_dim: int = 256,
         # TODO pixel decoder hyperparams
-        num_color_queries=100,
-        num_color_decoder_layers=3,
-        num_color_decoder_heads=8,
+        num_color_queries: int = 100,
+        num_color_decoder_layers: int = 3,
+        num_color_decoder_heads: int = 8,
     ):
         super().__init__()
         self.embedding_dim = embedding_dim
@@ -36,7 +36,7 @@ class DDColor(nn.Module):
         self.fusion = FusionModule()
 
     def forward(
-        self, grayscale_image, return_colored_image=False
+        self, grayscale_image: torch.Tensor, return_colored_image: bool = False
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[np.ndarray]]]:
         """Forward pass of the model.
 
@@ -108,6 +108,7 @@ class DDColor(nn.Module):
 
             return output, colored_images
         return output
+
 
 if __name__ == "__main__":
     import cv2
