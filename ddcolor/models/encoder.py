@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import torch
 from torch import nn
 from transformers import AutoImageProcessor, ConvNextModel
@@ -9,7 +11,9 @@ class EncoderModule(nn.Module):
         self.image_processor = AutoImageProcessor.from_pretrained(model_name)
         self.model = ConvNextModel.from_pretrained(model_name)
 
-    def forward(self, grayscale_image: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, grayscale_image: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Forward pass of the encoder module.
 
         Args:
@@ -22,6 +26,7 @@ class EncoderModule(nn.Module):
             (B, 768, H/32, W/32), respectively, representing the hidden states of the
             encoder.
         """
+        assert grayscale_image.shape[1:] == (3, 224, 224)
         inputs = self.image_processor(grayscale_image, return_tensors="pt")
         outputs = self.model(**inputs, return_dict=True, output_hidden_states=True)
         over_four, over_eight, over_sixteen, over_thirtytwo = outputs.hidden_states[1:]
@@ -30,7 +35,7 @@ class EncoderModule(nn.Module):
 
 if __name__ == "__main__":
     import cv2
-    from utils import preprocess_images, postprocess_images
+    from utils import postprocess_images, preprocess_images
 
     encoder = EncoderModule()
     images = ["test_images/sample1.png", "test_images/sample2.png"]
@@ -41,8 +46,3 @@ if __name__ == "__main__":
     assert over_eight.shape == (2, 192, 224 // 8, 224 // 8)
     assert over_sixteen.shape == (2, 384, 224 // 16, 224 // 16)
     assert over_thirtytwo.shape == (2, 768, 224 // 32, 224 // 32)
-
-    # not an encoder test but might as well test postprocess_images here
-    images = postprocess_images(images)
-    assert len(images) == 2
-    assert images[0].shape == images[1].shape == (224, 224, 3)
