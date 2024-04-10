@@ -108,3 +108,20 @@ class DDColor(nn.Module):
 
             return output, colored_images
         return output
+
+if __name__ == "__main__":
+    import cv2
+    from utils import preprocess_images
+
+    # TODO: run when pixel decoder is done
+    model = DDColor()
+    images = ["test_images/sample1.png", "test_images/sample2.png"]
+    images = [cv2.imread(image) for image in images]
+    images = preprocess_images(images)
+    output, colored_images = model(images, return_colored_image=True)
+    assert output.shape == (2, 2, 224, 224)
+    assert len(colored_images) == 2
+    assert colored_images[0].shape == (224, 224, 3)
+    assert colored_images[1].shape == (224, 224, 3)
+    cv2.imwrite("test_images/sample1_colored.png", colored_images[0])
+    cv2.imwrite("test_images/sample2_colored.png", colored_images[1])
