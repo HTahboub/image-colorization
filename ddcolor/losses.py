@@ -113,8 +113,8 @@ class ColorfulnessLoss(nn.Module):
 
 
 if __name__ == "__main__":
-    dummy = torch.randn(4, 3, 224, 224)
-    dummy_gt = torch.randn(4, 3, 224, 224)
+    dummy = torch.randn(4, 3, 256, 256)
+    dummy_gt = torch.randn(4, 3, 256, 256)
 
     pixel_loss = PixelLoss()
     perceptual_loss = PerceptualLoss()

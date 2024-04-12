@@ -14,7 +14,7 @@ def preprocess_images(images: List[np.ndarray]) -> torch.Tensor:
     Returns:
         torch.Tensor: Grayscale image tensor of shape (B, 3, H, W).
     """
-    images = [cv2.resize(image, (224, 224)) for image in images]
+    images = [cv2.resize(image, (256, 256)) for image in images]
     images = [cv2.cvtColor(image, cv2.COLOR_BGR2Lab)[:, :, :1] for image in images]
     images = [
         np.concatenate((image, np.zeros_like(image), np.zeros_like(image)), axis=-1)
@@ -22,4 +22,5 @@ def preprocess_images(images: List[np.ndarray]) -> torch.Tensor:
     ]
     images = [cv2.cvtColor(image, cv2.COLOR_LAB2RGB) for image in images]
     images = [torch.tensor(image).permute(2, 0, 1) for image in images]
-    return torch.stack(images)
+    images = torch.stack(images)
+    return images
