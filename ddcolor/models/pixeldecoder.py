@@ -1,101 +1,113 @@
 import torch
-from torch import nn
+import torch.nn as nn
 import torch.nn.functional as F
 
 
 class PixelDecoder(nn.Module):
-    def __init__(self, in_channels=384, out_channels=256):
-        super().__init__()
-        self.pixel_shuffle1 = nn.PixelShuffle(2)
-        self.pixel_shuffle2 = nn.PixelShuffle(2)
-        self.pixel_shuffle3 = nn.PixelShuffle(2)
-        self.pixel_shuffle4 = nn.PixelShuffle(2)
+    def __init__(self):
+        super(PixelDecoder, self).__init__()
+
+        self.conv1x1_1 = nn.Conv2d(192, 384, kernel_size=1)
+        self.conv1 = nn.Conv2d(768, 512, kernel_size=3, padding=1)
+
+        self.conv1x1_2 = nn.Conv2d(128, 512, kernel_size=1)
+        self.conv2 = nn.Conv2d(704, 512, kernel_size=3, padding=1)
+
+        self.conv1x1_3 = nn.Conv2d(128, 512, kernel_size=1)
+        self.conv3 = nn.Conv2d(608, 1024, kernel_size=3, padding=1)
+
+        self.conv4 = nn.Conv2d(64, 256, kernel_size=3, padding=1)
 
     def forward(
-        self,
-        grayscale_image: torch.Tensor,  # Shape: (B, 3, 224, 224)
-        over_four: torch.Tensor,  # Shape: (B, 96, 224/4, 224/4)
-        over_eight: torch.Tensor,  # Shape: (B, 192, 224/8, 224/8)
-        over_sixteen: torch.Tensor,  # Shape: (B, 384, 224/16, 224/16)
-        over_thirtytwo: torch.Tensor,  # Shape: (B, 384, 224/32, 224/32)
-    ) -> (torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor):
+        self, grayscale_image, over_four, over_eight, over_sixteen, over_thirtytwo
+    ):
+        x = over_thirtytwo
 
-        x = self.pixel_shuffle1(over_thirtytwo)
+        x = F.pixel_shuffle(x, upscale_factor=2)
+        x = self.conv1x1_1(x)
         x = torch.cat([x, over_sixteen], dim=1)
+        x = self.conv1(x)
+        stage5_output = x
 
-        x = self.pixel_shuffle2(x)
+        x = F.pixel_shuffle(x, upscale_factor=2)
+        x = self.conv1x1_2(x)
         x = torch.cat([x, over_eight], dim=1)
+        x = self.conv2(x)
+        stage6_output = x
 
-        x = self.pixel_shuffle3(x)
+        x = F.pixel_shuffle(x, upscale_factor=2)
+        x = self.conv1x1_3(x)
         x = torch.cat([x, over_four], dim=1)
-        x = x[:, :172, :, :]
+        x = self.conv3(x)
+        stage7_output = x
 
-        x = self.pixel_shuffle4(x)
-        grayscale_image = F.interpolate(
-            grayscale_image, size=x.shape[2:], mode="bilinear", align_corners=False
-        )
-        x = torch.cat([x, grayscale_image], dim=1)
+        x = F.pixel_shuffle(x, upscale_factor=4)
+        stage8_output = self.conv4(x)
 
-        num_channels = x.shape[1]
-        output1 = x[:, : num_channels // 4, :, :]
-        output2 = x[:, num_channels // 4 : num_channels // 2, :, :]
-        output3 = x[:, num_channels // 2 : num_channels * 3 // 4, :, :]
-        output4 = x[:, num_channels * 3 // 4 :, :, :]
-
-        return output1, output2, output3, output4
+        return stage5_output, stage6_output, stage7_output, stage8_output
 
 
 if __name__ == "__main__":
-    batch_size = 2
-    height = 224
-    width = 224
-
-    grayscale_image = torch.randn(batch_size, 3, height, width)
-    over_four = torch.randn(batch_size, 96, height // 4, width // 4)
-    over_eight = torch.randn(batch_size, 192, height // 8, width // 8)
-    over_sixteen = torch.randn(batch_size, 384, height // 16, width // 16)
-    over_thirtytwo = torch.randn(batch_size, 384, height // 32, width // 32)
-
+    # Create an instance of the PixelDecoder
     pixel_decoder = PixelDecoder()
 
-    # Test each step of the forward method and print the intermediate output shapes
-    x = pixel_decoder.pixel_shuffle1(over_thirtytwo)
-    print(f"After pixel_shuffle1: {x.shape}")
+    # Set the height and width
+    height = 256
+    width = 256
 
-    x = torch.cat([x, over_sixteen], dim=1)
-    print(f"After concatenation with over_sixteen: {x.shape}")
+    # Create random input tensors with the specified shapes
+    grayscale_image = torch.randn(1, 3, height, width)
+    over_four = torch.randn(1, 96, height // 4, width // 4)
+    over_eight = torch.randn(1, 192, height // 8, width // 8)
+    over_sixteen = torch.randn(1, 384, height // 16, width // 16)
+    over_thirtytwo = torch.randn(1, 768, height // 32, width // 32)
 
-    x = pixel_decoder.pixel_shuffle2(x)
-    print(f"After pixel_shuffle2: {x.shape}")
-
-    x = torch.cat([x, over_eight], dim=1)
-    print(f"After concatenation with over_eight: {x.shape}")
-
-    x = pixel_decoder.pixel_shuffle3(x)
-    print(f"After pixel_shuffle3: {x.shape}")
-
-    x = torch.cat([x, over_four], dim=1)
-    print(f"After concatenation with over_four: {x.shape}")
-
-    x = x[:, :172, :, :]
-    print(f"After channel adjustment: {x.shape}")
-
-    x = pixel_decoder.pixel_shuffle4(x)
-    print(f"After pixel_shuffle4: {x.shape}")
-
-    grayscale_image = F.interpolate(
-        grayscale_image, size=x.shape[2:], mode="bilinear", align_corners=False
-    )
-    print(f"After resizing grayscale_image: {grayscale_image.shape}")
-
-    x = torch.cat([x, grayscale_image], dim=1)
-    print(f"After final concatenation: {x.shape}")
-
-    # Call the forward method and print the output shapes
-    output1, output2, output3, output4 = pixel_decoder(
+    # Forward pass through the PixelDecoder
+    stage5_output, stage6_output, stage7_output, stage8_output = pixel_decoder(
         grayscale_image, over_four, over_eight, over_sixteen, over_thirtytwo
     )
-    print(f"Output 1 shape: {output1.shape}")
-    print(f"Output 2 shape: {output2.shape}")
-    print(f"Output 3 shape: {output3.shape}")
-    print(f"Output 4 shape: {output4.shape}")
+
+    # Print the shapes of the output tensors
+    # print("Input over_thirtytwo shape:", over_thirtytwo.shape)
+    # print("After pixel_shuffle 1 shape:", stage5_output.shape)
+    # print("Input over_sixteen shape:", over_sixteen.shape)
+    # print("After concatenation 1 shape:", stage5_output.shape)
+    # print("Stage 5 output shape:", stage5_output.shape)
+    # print("After pixel_shuffle 2 shape:", stage6_output.shape)
+    # print("Input over_eight shape:", over_eight.shape)
+    # print("After concatenation 2 shape:", stage6_output.shape)
+    # print("Stage 6 output shape:", stage6_output.shape)
+    # print("After pixel_shuffle 3 shape:", stage7_output.shape)
+    # print("Input over_four shape:", over_four.shape)
+    # print("After concatenation 3 shape:", stage7_output.shape)
+    # print("Stage 7 output shape:", stage7_output.shape)
+    # print("After pixel_shuffle 4 shape:", stage8_output.shape)
+    # print("Stage 8 output shape:", stage8_output.shape)
+
+    # Assert the shapes of the output tensors
+    assert stage5_output.shape == (
+        1,
+        512,
+        height // 16,
+        width // 16,
+    ), f"Stage 5 output shape mismatch: {stage5_output.shape}"
+    assert stage6_output.shape == (
+        1,
+        512,
+        height // 8,
+        width // 8,
+    ), f"Stage 6 output shape mismatch: {stage6_output.shape}"
+    assert stage7_output.shape == (
+        1,
+        1024,
+        height // 4,
+        width // 4,
+    ), f"Stage 7 output shape mismatch: {stage7_output.shape}"
+    assert stage8_output.shape == (
+        1,
+        256,
+        height,
+        width,
+    ), f"Stage 8 output shape mismatch: {stage8_output.shape}"
+
+    print("All assertions passed!")
