@@ -104,8 +104,61 @@ class PerceptualLoss(nn.Module):
         return F.l1_loss(colorized_features, ground_truth_features)
 
 
+class PatchGANDiscriminator(nn.Module):
+    def __init__(self, input_channels, num_filters=64, n_layers=3):
+        super().__init__()
+
+        layers = [self.get_layer(input_channels, num_filters, norm=False)]
+
+        for i in range(n_layers):
+            num_filters_prev = num_filters
+            num_filters = min(num_filters * 2, 512)
+            layers += [self.get_layer(num_filters_prev, num_filters)]
+
+        num_filters_prev = num_filters
+        num_filters = 1
+        layers += [self.get_layer(num_filters_prev, num_filters, stride=1)]
+
+        self.model = nn.Sequential(*layers)
+
+    def get_layer(self, in_channels, out_channels, norm=True, stride=2):
+        layers = [nn.Conv2d(in_channels, out_channels, 4, stride, 1)]
+        if norm:
+            layers += [nn.InstanceNorm2d(out_channels)]
+        layers += [nn.LeakyReLU(0.2, inplace=True)]
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.model(x)
+
+
 class AdversarialLoss(nn.Module):
-    pass
+    def __init__(self):
+        super().__init__()
+        self.discriminator = PatchGANDiscriminator(3)
+        self.criterion = nn.BCEWithLogitsLoss()
+
+    def forward(
+        self, colorized_image: torch.Tensor, real_image: torch.Tensor
+    ) -> torch.Tensor:
+        # Predict the realness of the colorized image
+        fake_logits = self.discriminator(colorized_image)
+
+        # Predict the realness of the real image
+        real_logits = self.discriminator(real_image)
+
+        # Compute the adversarial loss for the generator
+        target_fake = torch.ones_like(fake_logits)
+        loss_gen = self.criterion(fake_logits, target_fake)
+
+        # Compute the adversarial loss for the discriminator
+        # target_real = torch.ones_like(real_logits)
+        # loss_real = self.criterion(real_logits, target_real)
+        # target_fake = torch.zeros_like(fake_logits)
+        # loss_fake = self.criterion(fake_logits, target_fake)
+        # loss_dis = 0.5 * (loss_real + loss_fake)
+
+        return loss_gen
 
 
 class ColorfulnessLoss(nn.Module):
@@ -152,22 +205,22 @@ if __name__ == "__main__":
 
     pixel_loss = PixelLoss()
     perceptual_loss = PerceptualLoss()
-    # adversarial_loss = AdversarialLoss()
+    adversarial_loss = AdversarialLoss()
     colorfulness_loss = ColorfulnessLoss()
 
     loss_1 = pixel_loss(dummy, dummy_gt)
     loss_2 = perceptual_loss(dummy, dummy_gt)
-    # loss_3 = adversarial_loss(dummy)
+    loss_3 = adversarial_loss(dummy, dummy_gt)
     loss_4 = colorfulness_loss(dummy)
 
     assert loss_1.shape == torch.Size([])
     assert loss_2.shape == torch.Size([])
-    # assert loss_3.shape == torch.Size([])
+    assert loss_3.shape == torch.Size([])
     assert loss_4.shape == torch.Size([])
 
     print(f"Pixel loss: {loss_1:.4f}")
     print(f"Perceptual loss: {loss_2:.4f}")
-    # print(f"Adversarial loss: {loss_3:.4f}")
+    print(f"Adversarial loss: {loss_3:.4f}")
     print(f"Colorfulness loss: {loss_4:.4f}")
 
     assert pixel_loss(dummy, dummy) == 0
