@@ -4,7 +4,11 @@ from torch import nn
 
 class ColorDecoder(nn.Module):
     def __init__(
-        self, num_layers=3, num_color_queries=100, embedding_dim=256, num_heads=8
+        self,
+        num_layers: int = 3,
+        num_color_queries: int = 100,
+        embedding_dim: int = 256,
+        num_heads: int = 8,
     ):
         super().__init__()
         self.layers = nn.ModuleList(
@@ -20,7 +24,12 @@ class ColorDecoder(nn.Module):
         )
         self.color_queries = nn.Parameter(torch.zeros(num_color_queries, embedding_dim))
 
-    def forward(self, over_sixteen, over_eight, over_four):
+    def forward(
+        self,
+        over_sixteen: torch.Tensor,
+        over_eight: torch.Tensor,
+        over_four: torch.Tensor,
+    ) -> torch.Tensor:
         """Forward pass of the color decoder.
 
         Args:
@@ -49,7 +58,7 @@ class ColorDecoder(nn.Module):
 
 
 class ColorDecoderBlock(nn.Module):
-    def __init__(self, input_dim, embedding_dim, num_heads):
+    def __init__(self, input_dim: int, embedding_dim: int, num_heads: int):
         super().__init__()
         assert input_dim == 256 or input_dim == 512  # (should be 512, 512, 256)
         self.input_dim = input_dim
@@ -75,7 +84,9 @@ class ColorDecoderBlock(nn.Module):
             nn.Linear(embedding_dim, embedding_dim),
         )
 
-    def forward(self, color_queries, image_features):
+    def forward(
+        self, color_queries: torch.Tensor, image_features: torch.Tensor
+    ) -> torch.Tensor:
         """Forward pass of the color decoder block.
 
         Args:
