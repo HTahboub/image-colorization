@@ -120,9 +120,9 @@ if __name__ == "__main__":
     images = [cv2.imread(image) for image in images]
     images = preprocess_images(images)
     output, colored_images = model(images, return_colored_image=True)
-    assert output.shape == (2, 2, 224, 224)
+    assert output.shape == (2, 2, 256, 256)
     assert len(colored_images) == 2
-    assert colored_images[0].shape == (224, 224, 3)
-    assert colored_images[1].shape == (224, 224, 3)
+    assert colored_images[0].shape == (256, 256, 3)
+    assert colored_images[1].shape == (256, 256, 3)
     cv2.imwrite("test_images/sample1_colored.png", colored_images[0])
     cv2.imwrite("test_images/sample2_colored.png", colored_images[1])
