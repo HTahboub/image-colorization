@@ -22,12 +22,14 @@ class EncoderModule(nn.Module):
 
         Returns:
             torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor: dimensions
-            (B, 96, H/4, W/4), (B, 192, H/8, W/8), (B, 384, H/16, W/16), and
-            (B, 768, H/32, W/32), respectively, representing the hidden states of the
-            encoder.
+                (B, 96, H/4, W/4), (B, 192, H/8, W/8), (B, 384, H/16, W/16), and
+                (B, 768, H/32, W/32), respectively, representing the hidden states of
+                the encoder.
         """
-        assert grayscale_image.shape[1:] == (3, 224, 224)
-        inputs = self.image_processor(grayscale_image, return_tensors="pt")
+        assert grayscale_image.shape[1:] == (3, 256, 256)
+        inputs = self.image_processor(
+            grayscale_image, return_tensors="pt", do_resize=False
+        )
         outputs = self.model(**inputs, return_dict=True, output_hidden_states=True)
         over_four, over_eight, over_sixteen, over_thirtytwo = outputs.hidden_states[1:]
         return over_four, over_eight, over_sixteen, over_thirtytwo
@@ -42,7 +44,7 @@ if __name__ == "__main__":
     images = [cv2.imread(image) for image in images]
     images = preprocess_images(images)
     over_four, over_eight, over_sixteen, over_thirtytwo = encoder(images)
-    assert over_four.shape == (2, 96, 224 // 4, 224 // 4)
-    assert over_eight.shape == (2, 192, 224 // 8, 224 // 8)
-    assert over_sixteen.shape == (2, 384, 224 // 16, 224 // 16)
-    assert over_thirtytwo.shape == (2, 768, 224 // 32, 224 // 32)
+    assert over_four.shape == (2, 96, 256 // 4, 256 // 4)
+    assert over_eight.shape == (2, 192, 256 // 8, 256 // 8)
+    assert over_sixteen.shape == (2, 384, 256 // 16, 256 // 16)
+    assert over_thirtytwo.shape == (2, 768, 256 // 32, 256 // 32)

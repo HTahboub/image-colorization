@@ -13,12 +13,12 @@ from pixeldecoder import PixelDecoder
 class DDColor(nn.Module):
     def __init__(
         self,
-        encoder_name="facebook/convnext-tiny-224",
-        embedding_dim=256,
+        encoder_name: str = "facebook/convnext-tiny-224",
+        embedding_dim: int = 256,
         # TODO pixel decoder hyperparams
-        num_color_queries=100,
-        num_color_decoder_layers=3,
-        num_color_decoder_heads=8,
+        num_color_queries: int = 100,
+        num_color_decoder_layers: int = 3,
+        num_color_decoder_heads: int = 8,
     ):
         super().__init__()
         self.embedding_dim = embedding_dim
@@ -36,7 +36,7 @@ class DDColor(nn.Module):
         self.fusion = FusionModule()
 
     def forward(
-        self, grayscale_image, return_colored_image=False
+        self, grayscale_image: torch.Tensor, return_colored_image: bool = False
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[np.ndarray]]]:
         """Forward pass of the model.
 
@@ -108,3 +108,21 @@ class DDColor(nn.Module):
 
             return output, colored_images
         return output
+
+
+if __name__ == "__main__":
+    import cv2
+    from utils import preprocess_images
+
+    # TODO: run when pixel decoder is done
+    model = DDColor()
+    images = ["test_images/sample1.png", "test_images/sample2.png"]
+    images = [cv2.imread(image) for image in images]
+    images = preprocess_images(images)
+    output, colored_images = model(images, return_colored_image=True)
+    assert output.shape == (2, 2, 256, 256)
+    assert len(colored_images) == 2
+    assert colored_images[0].shape == (256, 256, 3)
+    assert colored_images[1].shape == (256, 256, 3)
+    cv2.imwrite("test_images/sample1_colored.png", colored_images[0])
+    cv2.imwrite("test_images/sample2_colored.png", colored_images[1])
