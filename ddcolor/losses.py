@@ -109,7 +109,41 @@ class AdversarialLoss(nn.Module):
 
 
 class ColorfulnessLoss(nn.Module):
-    pass
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, colorized_image: torch.Tensor) -> torch.Tensor:
+        # Convert the colorized image from RGB to rg-yb space
+        r, g, b = (
+            colorized_image[:, 0, :, :],
+            colorized_image[:, 1, :, :],
+            colorized_image[:, 2, :, :],
+        )
+        rg = r - g
+        yb = 0.5 * (r + g) - b
+
+        # Compute the mean and standard deviation of rg and yb
+        rg_mean = torch.mean(rg, dim=[1, 2])
+        rg_std = torch.std(rg, dim=[1, 2])
+        yb_mean = torch.mean(yb, dim=[1, 2])
+        yb_std = torch.std(yb, dim=[1, 2])
+
+        # Compute the mean and standard deviation of the pixel cloud in the rg-yb space
+        std_rgyb = torch.sqrt(rg_std**2 + yb_std**2)
+        mean_rgyb = torch.sqrt(rg_mean**2 + yb_mean**2)
+
+        # Compute the colorfulness metric
+        colorfulness = std_rgyb + 0.3 * mean_rgyb
+
+        # Normalize the colorfulness to [0, 1]
+        min_colorfulness = 0.0
+        max_colorfulness = 109.0  # From Table 2 in the paper
+        colorfulness = (colorfulness - min_colorfulness) / (
+            max_colorfulness - min_colorfulness
+        )
+
+        # Return colorfulness loss
+        return 1 - colorfulness.mean()
 
 
 if __name__ == "__main__":
@@ -119,22 +153,22 @@ if __name__ == "__main__":
     pixel_loss = PixelLoss()
     perceptual_loss = PerceptualLoss()
     # adversarial_loss = AdversarialLoss()
-    # colorfulness_loss = ColorfulnessLoss()
+    colorfulness_loss = ColorfulnessLoss()
 
     loss_1 = pixel_loss(dummy, dummy_gt)
     loss_2 = perceptual_loss(dummy, dummy_gt)
     # loss_3 = adversarial_loss(dummy)
-    # loss_4 = colorfulness_loss(dummy)
+    loss_4 = colorfulness_loss(dummy)
 
     assert loss_1.shape == torch.Size([])
     assert loss_2.shape == torch.Size([])
     # assert loss_3.shape == torch.Size([])
-    # assert loss_4.shape == torch.Size([])
+    assert loss_4.shape == torch.Size([])
 
     print(f"Pixel loss: {loss_1:.4f}")
     print(f"Perceptual loss: {loss_2:.4f}")
     # print(f"Adversarial loss: {loss_3:.4f}")
-    # print(f"Colorfulness loss: {loss_4:.4f}")
+    print(f"Colorfulness loss: {loss_4:.4f}")
 
     assert pixel_loss(dummy, dummy) == 0
     assert perceptual_loss(dummy, dummy) == 0
