@@ -125,4 +125,4 @@ if __name__ == "__main__":
     over_four = torch.randn(8, 256, 56, 56)
     output = color_decoder(over_sixteen, over_eight, over_four)
     print(output.shape)  # (8, 100, 256)
-    print(sum(p.numel() for p in color_decoder.parameters()))  # 2461952 params
+    print(sum(p.numel() for p in color_decoder.parameters()))  # 2,461,952 params
