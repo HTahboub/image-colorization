@@ -111,8 +111,7 @@ class DDColor(nn.Module):
 
 
 if __name__ == "__main__":
-    import cv2
-    from utils import preprocess_images
+    from .utils import preprocess_images
 
     # TODO: run when pixel decoder is done
     model = DDColor()
