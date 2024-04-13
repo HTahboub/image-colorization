@@ -74,7 +74,7 @@ class DDColor(nn.Module):
         color_queries = self.color_decoder(upsample_1, upsample_2, upsample_3)
         assert color_queries.shape == (B, self.num_color_queries, self.embedding_dim)
 
-        output = self.fusion(color_queries, upsample_4)
+        output = self.fusion(image_embedding=upsample_4, color_embedding=color_queries)
         assert output.shape == (B, 2, H, W)
 
         if return_colored_image:
