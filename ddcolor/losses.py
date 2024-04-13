@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models import vgg16
+import torchvision.models as models
+from torchvision.models.resnet import ResNet18_Weights
 
 
 class CombinedLoss(nn.Module):
@@ -104,61 +106,42 @@ class PerceptualLoss(nn.Module):
         return F.l1_loss(colorized_features, ground_truth_features)
 
 
-class PatchGANDiscriminator(nn.Module):
-    def __init__(self, input_channels, num_filters=64, n_layers=3):
-        super().__init__()
-
-        layers = [self.get_layer(input_channels, num_filters, norm=False)]
-
-        for i in range(n_layers):
-            num_filters_prev = num_filters
-            num_filters = min(num_filters * 2, 512)
-            layers += [self.get_layer(num_filters_prev, num_filters)]
-
-        num_filters_prev = num_filters
-        num_filters = 1
-        layers += [self.get_layer(num_filters_prev, num_filters, stride=1)]
-
-        self.model = nn.Sequential(*layers)
-
-    def get_layer(self, in_channels, out_channels, norm=True, stride=2):
-        layers = [nn.Conv2d(in_channels, out_channels, 4, stride, 1)]
-        if norm:
-            layers += [nn.InstanceNorm2d(out_channels)]
-        layers += [nn.LeakyReLU(0.2, inplace=True)]
-        return nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.model(x)
-
-
 class AdversarialLoss(nn.Module):
     def __init__(self):
-        super().__init__()
-        self.discriminator = PatchGANDiscriminator(3)
+        super(AdversarialLoss, self).__init__()
+
+        # Load pre-trained ResNet model
+        self.resnet = models.resnet18(weights=ResNet18_Weights.DEFAULT)
+
+        # Replace the last fully connected layer
+        num_features = self.resnet.fc.in_features
+        self.resnet.fc = nn.Linear(num_features, 1)
+
+        # Freeze the model parameters
+        for param in self.resnet.parameters():
+            param.requires_grad = False
+
+        # Set the model to evaluation mode
+        self.resnet.eval()
+
+        # Define the loss function
         self.criterion = nn.BCEWithLogitsLoss()
 
-    def forward(
-        self, colorized_image: torch.Tensor, real_image: torch.Tensor
-    ) -> torch.Tensor:
-        # Predict the realness of the colorized image
-        fake_logits = self.discriminator(colorized_image)
+    def forward(self, real_images, fake_images):
+        # Forward pass for real images
+        real_outputs = self.resnet(real_images)
+        real_labels = torch.ones_like(real_outputs)
+        real_loss = self.criterion(real_outputs, real_labels)
 
-        # Predict the realness of the real image
-        real_logits = self.discriminator(real_image)
+        # Forward pass for fake images
+        fake_outputs = self.resnet(fake_images)
+        fake_labels = torch.zeros_like(fake_outputs)
+        fake_loss = self.criterion(fake_outputs, fake_labels)
 
-        # Compute the adversarial loss for the generator
-        target_fake = torch.ones_like(fake_logits)
-        loss_gen = self.criterion(fake_logits, target_fake)
+        # Combine the losses
+        loss = (real_loss + fake_loss) / 2
 
-        # Compute the adversarial loss for the discriminator
-        # target_real = torch.ones_like(real_logits)
-        # loss_real = self.criterion(real_logits, target_real)
-        # target_fake = torch.zeros_like(fake_logits)
-        # loss_fake = self.criterion(fake_logits, target_fake)
-        # loss_dis = 0.5 * (loss_real + loss_fake)
-
-        return loss_gen
+        return loss
 
 
 class ColorfulnessLoss(nn.Module):
