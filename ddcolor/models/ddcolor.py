@@ -8,7 +8,6 @@ from colordecoder import ColorDecoder
 from encoder import EncoderModule
 from fusion import FusionModule
 from pixeldecoder import PixelDecoder
-import matplotlib.pyplot as plt
 
 
 class DDColor(nn.Module):
