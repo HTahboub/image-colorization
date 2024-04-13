@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models import vgg16
+import torchvision.models as models
+from torchvision.models.resnet import ResNet18_Weights
 
 
 class CombinedLoss(nn.Module):
@@ -105,7 +107,41 @@ class PerceptualLoss(nn.Module):
 
 
 class AdversarialLoss(nn.Module):
-    pass
+    def __init__(self):
+        super(AdversarialLoss, self).__init__()
+
+        # Load pre-trained ResNet model
+        self.resnet = models.resnet18(weights=ResNet18_Weights.DEFAULT)
+
+        # Replace the last fully connected layer
+        num_features = self.resnet.fc.in_features
+        self.resnet.fc = nn.Linear(num_features, 1)
+
+        # Freeze the model parameters
+        for param in self.resnet.parameters():
+            param.requires_grad = False
+
+        # Set the model to evaluation mode
+        self.resnet.eval()
+
+        # Define the loss function
+        self.criterion = nn.BCEWithLogitsLoss()
+
+    def forward(self, real_images, fake_images):
+        # Forward pass for real images
+        real_outputs = self.resnet(real_images)
+        real_labels = torch.ones_like(real_outputs)
+        real_loss = self.criterion(real_outputs, real_labels)
+
+        # Forward pass for fake images
+        fake_outputs = self.resnet(fake_images)
+        fake_labels = torch.zeros_like(fake_outputs)
+        fake_loss = self.criterion(fake_outputs, fake_labels)
+
+        # Combine the losses
+        loss = (real_loss + fake_loss) / 2
+
+        return loss
 
 
 class ColorfulnessLoss(nn.Module):
@@ -152,22 +188,22 @@ if __name__ == "__main__":
 
     pixel_loss = PixelLoss()
     perceptual_loss = PerceptualLoss()
-    # adversarial_loss = AdversarialLoss()
+    adversarial_loss = AdversarialLoss()
     colorfulness_loss = ColorfulnessLoss()
 
     loss_1 = pixel_loss(dummy, dummy_gt)
     loss_2 = perceptual_loss(dummy, dummy_gt)
-    # loss_3 = adversarial_loss(dummy)
+    loss_3 = adversarial_loss(dummy, dummy_gt)
     loss_4 = colorfulness_loss(dummy)
 
     assert loss_1.shape == torch.Size([])
     assert loss_2.shape == torch.Size([])
-    # assert loss_3.shape == torch.Size([])
+    assert loss_3.shape == torch.Size([])
     assert loss_4.shape == torch.Size([])
 
     print(f"Pixel loss: {loss_1:.4f}")
     print(f"Perceptual loss: {loss_2:.4f}")
-    # print(f"Adversarial loss: {loss_3:.4f}")
+    print(f"Adversarial loss: {loss_3:.4f}")
     print(f"Colorfulness loss: {loss_4:.4f}")
 
     assert pixel_loss(dummy, dummy) == 0
