@@ -64,7 +64,7 @@ class DDColor(nn.Module):
         assert over_thirtytwo.shape == (B, C * 256, H // 32, W // 32)
 
         upsample_1, upsample_2, upsample_3, upsample_4 = self.pixel_decoder(
-            over_four, over_eight, over_sixteen, over_thirtytwo
+            grayscale_image, over_four, over_eight, over_sixteen, over_thirtytwo
         )
         assert upsample_1.shape == (B, 2 * self.embedding_dim, H // 16, W // 16)
         assert upsample_2.shape == (B, 2 * self.embedding_dim, H // 8, W // 8)
@@ -111,7 +111,7 @@ class DDColor(nn.Module):
 
 
 if __name__ == "__main__":
-    from .utils import preprocess_images
+    from utils import preprocess_images
 
     # TODO: run when pixel decoder is done
     model = DDColor()
