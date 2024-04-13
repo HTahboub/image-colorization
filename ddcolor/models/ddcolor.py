@@ -8,6 +8,7 @@ from colordecoder import ColorDecoder
 from encoder import EncoderModule
 from fusion import FusionModule
 from pixeldecoder import PixelDecoder
+import matplotlib.pyplot as plt
 
 
 class DDColor(nn.Module):
@@ -15,7 +16,6 @@ class DDColor(nn.Module):
         self,
         encoder_name: str = "facebook/convnext-tiny-224",
         embedding_dim: int = 256,
-        # TODO pixel decoder hyperparams
         num_color_queries: int = 100,
         num_color_decoder_layers: int = 3,
         num_color_decoder_heads: int = 8,
@@ -23,9 +23,7 @@ class DDColor(nn.Module):
         super().__init__()
         self.embedding_dim = embedding_dim
         self.backbone = EncoderModule(encoder_name)
-        self.pixel_decoder = PixelDecoder(
-            # TODO hyperparams
-        )
+        self.pixel_decoder = PixelDecoder()
         self.num_color_queries = num_color_queries
         self.color_decoder = ColorDecoder(
             num_layers=num_color_decoder_layers,
@@ -78,6 +76,11 @@ class DDColor(nn.Module):
         assert output.shape == (B, 2, H, W)
 
         if return_colored_image:
+            # plt.figure(figsize=(8, 8))
+            # plt.imshow(grayscale_image[0, 2].cpu().numpy(), cmap="gray") # change the index (second number in [0,2]) to 0, 1, 2 to see the different channels
+            # plt.axis('off')
+            # plt.title('Grayscale Image')
+            # plt.show()
             grayscale_single = grayscale_image[:, :1, ...]
             # check that the image is actually grayscale (all channels same)
             assert torch.allclose(
@@ -98,7 +101,7 @@ class DDColor(nn.Module):
             # combine the input (luminance) with the output (chrominance/ab channels)
             lab = torch.cat((grayscale_single, output), dim=1)  # B, 3, H, W
 
-            lab = lab.permute(0, 2, 3, 1).cpu().numpy()
+            lab = lab.permute(0, 2, 3, 1).detach().cpu().numpy()
             colored_images = []
             # convert each to BGR
             for i in range(lab.shape[0]):
@@ -113,7 +116,6 @@ class DDColor(nn.Module):
 if __name__ == "__main__":
     from utils import preprocess_images
 
-    # TODO: run when pixel decoder is done
     model = DDColor()
     images = ["test_images/sample1.png", "test_images/sample2.png"]
     images = [cv2.imread(image) for image in images]
