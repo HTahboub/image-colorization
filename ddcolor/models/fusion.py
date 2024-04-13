@@ -18,8 +18,11 @@ class FusionModule(nn.Module):
         Returns:
             A tensor of shape (B, 2, H, W).
         """
-        assert image_embedding.shape[0] == color_embedding.shape[0]
-        assert image_embedding.shape[1] == color_embedding.shape[2]
+        assert image_embedding.shape[1] == color_embedding.shape[2], f"Instead got {image_embedding.shape} and {color_embedding.shape}, image embedding shape should be (B, C, H, W) and color embedding shape should be (B, K, C), where C = {image_embedding.shape[1]} and K = {color_embedding.shape[1]}."
+        assert color_embedding.shape[0] == image_embedding.shape[0], (
+            f"Batch size of image embedding and color embedding must be the same. "
+            f"Got {image_embedding.shape[0]} and {color_embedding.shape[0]}."
+        )
 
         f_hat = torch.einsum("bkc,bchw -> bkhw", color_embedding, image_embedding)
         y_hat = nn.Conv2d(
