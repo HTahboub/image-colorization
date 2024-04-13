@@ -82,10 +82,10 @@ class DDColor(nn.Module):
             # check that the image is actually grayscale (all channels same)
             assert torch.allclose(
                 grayscale_image[:, 0, ...], grayscale_image[:, 1, ...]
-            )
+            ), f"Grayscale image is not actually grayscale: {grayscale_image}"
             assert torch.allclose(
                 grayscale_image[:, 1, ...], grayscale_image[:, 2, ...]
-            )
+            ), f"Grayscale image is not actually grayscale: {grayscale_image}"
 
             # scale grayscale image to proper range for L (0, 100)
             grayscale_single = grayscale_single / 255.0 * 100.0
