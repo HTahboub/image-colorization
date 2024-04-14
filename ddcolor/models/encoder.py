@@ -39,12 +39,13 @@ class EncoderModule(nn.Module):
 
 
 if __name__ == "__main__":
-    import cv2
-    from utils import preprocess_images
+    import torchvision
+    from utils import preprocess_images, image_list_to_tensor
 
     encoder = EncoderModule()
     images = ["test_images/sample1.png", "test_images/sample2.png"]
-    images = [cv2.imread(image) for image in images]
+    images = [torchvision.io.read_image(image) for image in images]
+    images = image_list_to_tensor(images)
     images, _, _ = preprocess_images(images)
     over_four, over_eight, over_sixteen, over_thirtytwo = encoder(images)
     assert over_four.shape == (2, 96, 256 // 4, 256 // 4)
