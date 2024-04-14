@@ -121,51 +121,67 @@ class DDColor(nn.Module):
 
 
 if __name__ == "__main__":
+    import sys
+    import time
+
+    sys.path.append("ddcolor")
+    import numpy as np
+    from losses import CombinedLoss
     from utils import preprocess_images
 
-    # test forward pass
-    model = DDColor()#.cuda()
+    mul_factor = 64  # simulating batch size of 128
     images = ["test_images/sample1.png", "test_images/sample2.png"]
-    images = [cv2.imread(image) for image in images]
+    images = [cv2.imread(image) for image in images] * mul_factor
     images, images_lab, images_rgb = preprocess_images(images)
-    # images = images.cuda()
-    # images_lab = images_lab.cuda()
-    # images_rgb = images_rgb.cuda()
+
+    model = DDColor()
+    criterion = CombinedLoss()
+    images_l, images_ab = images_lab[:, :1, ...], images_lab[:, 1:, ...]
+
+    device = "cpu"
+    model = model.to(device)
+    images = images.to(device)
+    images_rgb = images_rgb.to(device)
+    images_l = images_l.to(device)
+    images_ab = images_ab.to(device)
+    criterion = criterion.to(device)
+    print("Input dim:", images.shape)
+    start = time.time()
+    output = model(images)
+    loss = criterion(output, images_rgb, images_l, images_ab)
+    loss.backward()
+    print(f"CPU Forward-Backward Time: {time.time() - start:.4f} seconds")
+    for param in model.parameters():
+        if param.requires_grad:
+            assert param.grad is not None
+
+    device = torch.device("cuda")
+    model = model.to(device)
+    images = images.to(device)
+    images_rgb = images_rgb.to(device)
+    images_l = images_l.to(device)
+    images_ab = images_ab.to(device)
+    criterion = criterion.to(device)
+    start = time.time()
+    output = model(images)
+    loss = criterion(output, images_rgb, images_l, images_ab)
+    loss.backward()
+    print(f"GPU Forward-Backward Time: {time.time() - start:.4f} seconds")
+    for param in model.parameters():
+        if param.requires_grad:
+            assert param.grad is not None
+
     output, colored_images = model(images, return_colored_image=True)
-    assert output.shape == (2, 2, 256, 256)
-    assert len(colored_images) == 2
+    assert output.shape == (2 * mul_factor, 2, 256, 256)
+    assert len(colored_images) == 2 * mul_factor
     assert colored_images[0].shape == (256, 256, 3)
     assert colored_images[1].shape == (256, 256, 3)
     # cv2.imwrite("test_images/sample1_colored.png", colored_images[0])
     # cv2.imwrite("test_images/sample2_colored.png", colored_images[1])
+
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total params: {total_params}")  # 30,282,080
     total_trainable_params = sum(
         p.numel() for p in model.parameters() if p.requires_grad
     )
     print(f"Total trainable params: {total_trainable_params}")  # 2,461,952
-
-    # test backward pass
-    import sys
-    sys.path.append("ddcolor")
-    import numpy as np
-    from losses import CombinedLoss
-
-    criterion = CombinedLoss()
-    images_l, images_ab = images_lab[:, :1, ...], images_lab[:, 1:, ...]
-    loss = criterion(
-        output, torch.from_numpy(np.stack(images_rgb)), images_l, images_ab
-    )
-    print(f"Loss: {loss:.4f}")
-    loss.backward()
-    for param in model.parameters():
-        if param.requires_grad:
-            assert param.grad is not None
-
-    import time
-    start = time.time()
-    loss = criterion(
-        output, torch.from_numpy(np.stack(images_rgb)), images_l, images_ab
-    )
-    print(f"Time: {time.time() - start:.4f}")
-    
