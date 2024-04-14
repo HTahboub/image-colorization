@@ -5,6 +5,7 @@ from torch import nn
 class FusionModule(nn.Module):
     def __init__(self):
         super().__init__()
+        self.conv = nn.Conv2d(in_channels=100, out_channels=2, kernel_size=1)
 
     def forward(
         self, image_embedding: torch.Tensor, color_embedding: torch.Tensor
@@ -25,9 +26,7 @@ class FusionModule(nn.Module):
         )
 
         f_hat = torch.einsum("bkc,bchw -> bkhw", color_embedding, image_embedding)
-        y_hat = nn.Conv2d(
-            in_channels=color_embedding.shape[1], out_channels=2, kernel_size=1
-        )(f_hat)
+        y_hat = self.conv(f_hat)
         return y_hat
 
 

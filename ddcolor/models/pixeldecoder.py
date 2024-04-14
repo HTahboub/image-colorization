@@ -6,6 +6,17 @@ class PixelDecoder(nn.Module):
     def __init__(self):
         super(PixelDecoder, self).__init__()
 
+        self.stage_5_pixel_shuffle = nn.PixelShuffle(upscale_factor=2)
+        self.stage_6_pixel_shuffle = nn.PixelShuffle(upscale_factor=2)
+        self.stage_7_pixel_shuffle = nn.PixelShuffle(upscale_factor=2)
+        self.stage_8_pixel_shuffle = nn.PixelShuffle(upscale_factor=4)
+        
+        self.stage_5_conv = nn.Conv2d(in_channels=576, out_channels=512, kernel_size=3, padding=1)
+        self.stage_6_conv = nn.Conv2d(in_channels=288, out_channels=512, kernel_size=3, padding=1)
+        self.stage_7_conv = nn.Conv2d(in_channels=144, out_channels=256, kernel_size=3, padding=1)
+        self.stage_8_conv = nn.Conv2d(in_channels=6, out_channels=256, kernel_size=3, padding=1)
+        
+
     def forward(
         self, grayscale_image, over_four, over_eight, over_sixteen, over_thirtytwo
     ):
@@ -14,29 +25,29 @@ class PixelDecoder(nn.Module):
         stage_1 = over_four
 
         # stage 5
-        stage_5 = nn.PixelShuffle(upscale_factor=2)(over_thirtytwo)
+        stage_5 = self.stage_5_pixel_shuffle(over_thirtytwo)
         stage_5 = torch.cat([stage_5, stage_3], dim=1)
-        stage_5 = nn.Conv2d(in_channels=stage_5.shape[1], out_channels=512, kernel_size=3, padding=1)(stage_5)
+        stage_5 = self.stage_5_conv(stage_5)
 
         assert stage_5.shape[1:] == (512, 16, 16)
 
         # stage 6
-        stage_6 = nn.PixelShuffle(2)(over_sixteen)
+        stage_6 = self.stage_6_pixel_shuffle(over_sixteen)
         stage_6 = torch.cat([stage_6, stage_2], dim=1)
-        stage_6 = nn.Conv2d(stage_6.shape[1], 512, 3, padding=1)(stage_6)
+        stage_6 = self.stage_6_conv(stage_6)
 
         assert stage_6.shape[1:] == (512, 32, 32)
 
         # stage 7
-        stage_7 = nn.PixelShuffle(2)(over_eight)
+        stage_7 = self.stage_7_pixel_shuffle(over_eight)
         stage_7 = torch.cat([stage_7, stage_1], dim=1)
-        stage_7 = nn.Conv2d(stage_7.shape[1], 256, 3, padding=1)(stage_7)
+        stage_7 = self.stage_7_conv(stage_7)
 
         assert stage_7.shape[1:] == (256, 64, 64)
 
         # stage 8
-        stage_8 = nn.PixelShuffle(4)(over_four)
-        stage_8 = nn.Conv2d(stage_8.shape[1], 256, 3, padding=1)(stage_8)
+        stage_8 = self.stage_8_pixel_shuffle(over_four)
+        stage_8 = self.stage_8_conv(stage_8)
         assert stage_8.shape[1:] == (256, 256, 256), f"Stage 8 shape mismatch: {stage_8.shape}"
 
         return stage_5, stage_6, stage_7, stage_8
