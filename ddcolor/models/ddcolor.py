@@ -52,6 +52,10 @@ class DDColor(nn.Module):
         B, C, H, W = grayscale_image.shape
         assert C == 3
 
+        # check that the image is actually grayscale (all channels same)
+        assert torch.allclose(grayscale_image[:, 0, ...], grayscale_image[:, 1, ...])
+        assert torch.allclose(grayscale_image[:, 1, ...], grayscale_image[:, 2, ...])
+
         over_four, over_eight, over_sixteen, over_thirtytwo = self.backbone(
             grayscale_image
         )
@@ -75,39 +79,36 @@ class DDColor(nn.Module):
         assert output.shape == (B, 2, H, W)
 
         if return_colored_image:
-            # plt.figure(figsize=(8, 8))
-            # plt.imshow(grayscale_image[0, 2].cpu().numpy(), cmap="gray") # change the index (second number in [0,2]) to 0, 1, 2 to see the different channels
-            # plt.axis('off')
-            # plt.title('Grayscale Image')
-            # plt.show()
-            grayscale_single = grayscale_image[:, :1, ...]
-            # check that the image is actually grayscale (all channels same)
-            assert torch.allclose(
-                grayscale_image[:, 0, ...], grayscale_image[:, 1, ...]
-            ), f"Grayscale image is not actually grayscale: {grayscale_image}"
-            assert torch.allclose(
-                grayscale_image[:, 1, ...], grayscale_image[:, 2, ...]
-            ), f"Grayscale image is not actually grayscale: {grayscale_image}"
+            grayscale_single = grayscale_image.detach().clone()
+            grayscale_single = grayscale_single.permute(0, 2, 3, 1)
+            grayscale_single = grayscale_single.cpu().numpy()
+            grayscale_singles = []
+            for i in range(grayscale_single.shape[0]):
+                grayscale_i = grayscale_single[i].astype(np.float32) / 255.0
+                grayscale_i = cv2.cvtColor(grayscale_i, cv2.COLOR_BGR2Lab)
+                grayscale_i = grayscale_i[:, :, :1]
+                grayscale_singles.append(grayscale_i)
+            grayscale_single = np.stack(grayscale_singles)
 
-            # scale grayscale image to proper range for L (0, 100)
-            grayscale_single = grayscale_single / 255.0 * 100.0
+            output_np = output.detach().clone().cpu().numpy()
+            output_np = np.transpose(output_np, (0, 2, 3, 1)).astype(np.float32)
 
             # scale output to proper range for AB (-128, 128)
-            output_min = output.min().item()
-            output_max = output.max().item()
-            output = (output - output_min) / (output_max - output_min) * 256.0 - 128.0
-
+            # TODO: does this matter?
+            output_min = output_np.min()
+            output_max = output_np.max()
+            output_np = (output_np - output_min) / (
+                output_max - output_min
+            ) * 256.0 - 128.0
+            
             # combine the input (luminance) with the output (chrominance/ab channels)
-            lab = torch.cat((grayscale_single, output), dim=1)  # B, 3, H, W
+            lab = np.concatenate((grayscale_single, output_np), axis=-1)  # (B, H, W, 3)
 
-            lab = lab.permute(0, 2, 3, 1).detach().cpu().numpy()
             colored_images = []
             # convert each to BGR
             for i in range(lab.shape[0]):
-                lab_image = lab[i].astype(np.float32)
-                bgr_image = cv2.cvtColor(lab_image, cv2.COLOR_LAB2BGR)
+                bgr_image = cv2.cvtColor(lab[i], cv2.COLOR_LAB2BGR) * 255.0
                 colored_images.append(bgr_image)
-
             return output, colored_images
         return output
 

@@ -3,12 +3,15 @@ from typing import Tuple
 import torch
 from torch import nn
 from transformers import AutoImageProcessor, ConvNextModel
+from transformers.utils.logging import set_verbosity_error, set_verbosity_warning
 
 
 class EncoderModule(nn.Module):
     def __init__(self, model_name: str = "facebook/convnext-tiny-224"):
         super().__init__()
+        set_verbosity_error()
         self.image_processor = AutoImageProcessor.from_pretrained(model_name)
+        set_verbosity_warning
         self.model = ConvNextModel.from_pretrained(model_name)
 
     def forward(
