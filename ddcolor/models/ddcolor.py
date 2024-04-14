@@ -21,8 +21,13 @@ class DDColor(nn.Module):
     ):
         super().__init__()
         self.embedding_dim = embedding_dim
+
         self.backbone = EncoderModule(encoder_name)
+        for param in self.backbone.parameters():
+            param.requires_grad = False
+
         self.pixel_decoder = PixelDecoder()
+
         self.num_color_queries = num_color_queries
         self.color_decoder = ColorDecoder(
             num_layers=num_color_decoder_layers,
@@ -30,6 +35,7 @@ class DDColor(nn.Module):
             embedding_dim=embedding_dim,
             num_heads=num_color_decoder_heads,
         )
+
         self.fusion = FusionModule()
 
     def forward(
@@ -83,6 +89,7 @@ class DDColor(nn.Module):
             grayscale_single = grayscale_single.permute(0, 2, 3, 1)
             grayscale_single = grayscale_single.cpu().numpy()
             grayscale_singles = []
+            # TODO: replace with kornia.color.bgr_to_lab?
             for i in range(grayscale_single.shape[0]):
                 grayscale_i = grayscale_single[i].astype(np.float32) / 255.0
                 grayscale_i = cv2.cvtColor(grayscale_i, cv2.COLOR_BGR2Lab)
@@ -100,7 +107,7 @@ class DDColor(nn.Module):
             output_np = (output_np - output_min) / (
                 output_max - output_min
             ) * 256.0 - 128.0
-            
+
             # combine the input (luminance) with the output (chrominance/ab channels)
             lab = np.concatenate((grayscale_single, output_np), axis=-1)  # (B, H, W, 3)
 
@@ -116,14 +123,49 @@ class DDColor(nn.Module):
 if __name__ == "__main__":
     from utils import preprocess_images
 
-    model = DDColor()
+    # test forward pass
+    model = DDColor()#.cuda()
     images = ["test_images/sample1.png", "test_images/sample2.png"]
     images = [cv2.imread(image) for image in images]
-    images = preprocess_images(images)
+    images, images_lab, images_rgb = preprocess_images(images)
+    # images = images.cuda()
+    # images_lab = images_lab.cuda()
+    # images_rgb = images_rgb.cuda()
     output, colored_images = model(images, return_colored_image=True)
     assert output.shape == (2, 2, 256, 256)
     assert len(colored_images) == 2
     assert colored_images[0].shape == (256, 256, 3)
     assert colored_images[1].shape == (256, 256, 3)
-    cv2.imwrite("test_images/sample1_colored.png", colored_images[0])
-    cv2.imwrite("test_images/sample2_colored.png", colored_images[1])
+    # cv2.imwrite("test_images/sample1_colored.png", colored_images[0])
+    # cv2.imwrite("test_images/sample2_colored.png", colored_images[1])
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Total params: {total_params}")  # 30,282,080
+    total_trainable_params = sum(
+        p.numel() for p in model.parameters() if p.requires_grad
+    )
+    print(f"Total trainable params: {total_trainable_params}")  # 2,461,952
+
+    # test backward pass
+    import sys
+    sys.path.append("ddcolor")
+    import numpy as np
+    from losses import CombinedLoss
+
+    criterion = CombinedLoss()
+    images_l, images_ab = images_lab[:, :1, ...], images_lab[:, 1:, ...]
+    loss = criterion(
+        output, torch.from_numpy(np.stack(images_rgb)), images_l, images_ab
+    )
+    print(f"Loss: {loss:.4f}")
+    loss.backward()
+    for param in model.parameters():
+        if param.requires_grad:
+            assert param.grad is not None
+
+    import time
+    start = time.time()
+    loss = criterion(
+        output, torch.from_numpy(np.stack(images_rgb)), images_l, images_ab
+    )
+    print(f"Time: {time.time() - start:.4f}")
+    

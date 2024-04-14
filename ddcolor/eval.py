@@ -9,7 +9,7 @@ from utils import preprocess_images
 from torchvision.models import inception_v3
 
 
-# Load pre-trained Inception model (replace with your own implementation)
+# Load pre-trained Inception model
 def load_inception_model():
     # Load pre-trained Inception v3 model
     inception_model = inception_v3(pretrained=True)
@@ -90,11 +90,13 @@ def evaluate(model, test_dir, output_dir, return_colored_image=True):
 
     for test_image in tqdm(test_images, desc="Evaluating"):
         image = cv2.imread(test_image)
-        image = preprocess_images(
+        image, _, _ = preprocess_images(
             [image]
         )
 
-        output, colored_images = model(image, return_colored_image=return_colored_image)
+        output = model(image, return_colored_image=return_colored_image)
+        if return_colored_image:
+            output, colored_images = output
 
         assert output.shape == (
             1,

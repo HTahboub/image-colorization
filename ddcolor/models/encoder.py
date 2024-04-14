@@ -32,7 +32,7 @@ class EncoderModule(nn.Module):
         assert grayscale_image.shape[1:] == (3, 256, 256)
         inputs = self.image_processor(
             grayscale_image, return_tensors="pt", do_resize=False
-        )
+        ).to(grayscale_image.device)
         outputs = self.model(**inputs, return_dict=True, output_hidden_states=True)
         over_four, over_eight, over_sixteen, over_thirtytwo = outputs.hidden_states[1:]
         return over_four, over_eight, over_sixteen, over_thirtytwo
@@ -45,7 +45,7 @@ if __name__ == "__main__":
     encoder = EncoderModule()
     images = ["test_images/sample1.png", "test_images/sample2.png"]
     images = [cv2.imread(image) for image in images]
-    images = preprocess_images(images)
+    images, _, _ = preprocess_images(images)
     over_four, over_eight, over_sixteen, over_thirtytwo = encoder(images)
     assert over_four.shape == (2, 96, 256 // 4, 256 // 4)
     assert over_eight.shape == (2, 192, 256 // 8, 256 // 8)
