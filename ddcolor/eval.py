@@ -1,11 +1,12 @@
 import os
-import cv2
+import torch
+import torchvision
 import numpy as np
 from tqdm import tqdm
 from scipy.linalg import sqrtm
 from skimage.metrics import peak_signal_noise_ratio
-from models.ddcolor import DDColor
-from utils import preprocess_images
+from models.model import DDColor
+from models.utils import preprocess_images
 from torchvision.models import inception_v3
 
 
@@ -72,7 +73,7 @@ def calculate_psnr(real_images, generated_images):
     return np.mean(psnr_scores)
 
 
-def evaluate(model, test_dir, output_dir, return_colored_image=True):
+def evaluate(model, test_dir, output_dir):
     inception_model = load_inception_model()
 
     if not os.path.exists(output_dir):
@@ -89,14 +90,10 @@ def evaluate(model, test_dir, output_dir, return_colored_image=True):
     psnr_scores = []
 
     for test_image in tqdm(test_images, desc="Evaluating"):
-        image = cv2.imread(test_image)
-        image, _, _ = preprocess_images(
-            [image]
-        )
+        image = torchvision.io.read_image(test_image).unsqueeze(0)
+        image, _, _ = preprocess_images(image)
 
-        output = model(image, return_colored_image=return_colored_image)
-        if return_colored_image:
-            output, colored_images = output
+        output, colored_images = model(image)
 
         assert output.shape == (
             1,
@@ -105,36 +102,38 @@ def evaluate(model, test_dir, output_dir, return_colored_image=True):
             256,
         ), f"Output shape is incorrect: {output.shape}"
 
-        if return_colored_image:
-            assert (
-                len(colored_images) == 1
-            ), f"Incorrect number of colorized images: {len(colored_images)}"
-            colored_image = colored_images[0]
-            assert colored_image.shape == (
-                256,
-                256,
-                3,
-            ), f"Colorized image shape is incorrect: {colored_image.shape}"
+        assert (
+            len(colored_images) == 1
+        ), f"Incorrect number of colorized images: {len(colored_images)}"
+        colored_image = colored_images[0, ...].permute(1, 2, 0).detach() * 255
+        colored_image = colored_image.numpy().astype(np.uint8)
+        assert colored_image.shape == (
+            256,
+            256,
+            3,
+        ), f"Colorized image shape is incorrect: {colored_image.shape}"
 
-            filename = os.path.basename(test_image)
-            output_path = os.path.join(output_dir, filename)
-            cv2.imwrite(output_path, colored_image)
+        filename = os.path.basename(test_image)
+        output_path = os.path.join(output_dir, filename)
+        torchvision.io.write_png(
+            torch.tensor(colored_image).permute(2, 0, 1), output_path
+        )
 
-            # Calculate evaluation metrics
-            real_image = cv2.imread(test_image)
-            fid_scores.append(
-                calculate_fid(
-                    np.expand_dims(real_image, 0),
-                    np.expand_dims(colored_image, 0),
-                    inception_model,
-                )
+        # Calculate evaluation metrics
+        real_image = torchvision.io.read_image(test_image).permute(1, 2, 0).numpy()
+        fid_scores.append(
+            calculate_fid(
+                np.expand_dims(real_image, 0),
+                np.expand_dims(colored_image, 0),
+                inception_model,
             )
-            cf_scores.append(calculate_colorfulness(np.expand_dims(colored_image, 0)))
-            psnr_scores.append(
-                calculate_psnr(
-                    np.expand_dims(real_image, 0), np.expand_dims(colored_image, 0)
-                )
+        )
+        cf_scores.append(calculate_colorfulness(np.expand_dims(colored_image, 0)))
+        psnr_scores.append(
+            calculate_psnr(
+                np.expand_dims(real_image, 0), np.expand_dims(colored_image, 0)
             )
+        )
 
     # Print average evaluation metrics
     print(f"Average FID: {np.mean(fid_scores)}")
@@ -147,4 +146,4 @@ if __name__ == "__main__":
     test_dir = "test_images"
     output_dir = "colorized_images"
 
-    evaluate(model, test_dir, output_dir, return_colored_image=True)
+    evaluate(model, test_dir, output_dir)
