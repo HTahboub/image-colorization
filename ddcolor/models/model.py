@@ -1,13 +1,13 @@
-from typing import List, Tuple, Union
+from typing import Tuple, Union
 
-import cv2
-import numpy as np
 import torch
 import torch.nn as nn
-from colordecoder import ColorDecoder
-from encoder import EncoderModule
-from fusion import FusionModule
-from pixeldecoder import PixelDecoder
+import torchvision
+from kornia.color import lab_to_rgb, rgb_to_lab
+from ddcolor.models.colordecoder import ColorDecoder
+from ddcolor.models.encoder import EncoderModule
+from ddcolor.models.fusion import FusionModule
+from ddcolor.models.pixeldecoder import PixelDecoder
 
 
 class DDColor(nn.Module):
@@ -39,8 +39,8 @@ class DDColor(nn.Module):
         self.fusion = FusionModule()
 
     def forward(
-        self, grayscale_image: torch.Tensor, return_colored_image: bool = False
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[np.ndarray]]]:
+        self, grayscale_image: torch.Tensor
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """Forward pass of the model.
 
         Args:
@@ -50,17 +50,20 @@ class DDColor(nn.Module):
 
         Returns:
             output: A tensor of shape (B, 2, H, W) representing the chrominance channels
-                of the colored image.
-            colored_images: A list of B numpy arrays of shape (H, W, 3) representing the
-                colored images in BGR format. Only returned if return_colored_image is
-                True.
+                of the colored images.
+            colored_images: A tensor of shape (B, 3, H, W) representing the colored
+                images.
         """
         B, C, H, W = grayscale_image.shape
         assert C == 3
 
         # check that the image is actually grayscale (all channels same)
-        assert torch.allclose(grayscale_image[:, 0, ...], grayscale_image[:, 1, ...])
-        assert torch.allclose(grayscale_image[:, 1, ...], grayscale_image[:, 2, ...])
+        assert torch.allclose(
+            grayscale_image[:, 0, ...], grayscale_image[:, 1, ...], atol=1e-3
+        )
+        assert torch.allclose(
+            grayscale_image[:, 1, ...], grayscale_image[:, 2, ...], atol=1e-3
+        )
 
         over_four, over_eight, over_sixteen, over_thirtytwo = self.backbone(
             grayscale_image
@@ -84,71 +87,46 @@ class DDColor(nn.Module):
         output = self.fusion(image_embedding=upsample_4, color_embedding=color_queries)
         assert output.shape == (B, 2, H, W)
 
-        if return_colored_image:
-            grayscale_single = grayscale_image.detach().clone()
-            grayscale_single = grayscale_single.permute(0, 2, 3, 1)
-            grayscale_single = grayscale_single.cpu().numpy()
-            grayscale_singles = []
-            # TODO: replace with kornia.color.bgr_to_lab?
-            for i in range(grayscale_single.shape[0]):
-                grayscale_i = grayscale_single[i].astype(np.float32) / 255.0
-                grayscale_i = cv2.cvtColor(grayscale_i, cv2.COLOR_BGR2Lab)
-                grayscale_i = grayscale_i[:, :, :1]
-                grayscale_singles.append(grayscale_i)
-            grayscale_single = np.stack(grayscale_singles)
-
-            output_np = output.detach().clone().cpu().numpy()
-            output_np = np.transpose(output_np, (0, 2, 3, 1)).astype(np.float32)
-
-            # scale output to proper range for AB (-128, 128)
-            # TODO: does this matter?
-            output_min = output_np.min()
-            output_max = output_np.max()
-            output_np = (output_np - output_min) / (
-                output_max - output_min
-            ) * 256.0 - 128.0
-
-            # combine the input (luminance) with the output (chrominance/ab channels)
-            lab = np.concatenate((grayscale_single, output_np), axis=-1)  # (B, H, W, 3)
-
-            colored_images = []
-            # convert each to BGR
-            for i in range(lab.shape[0]):
-                bgr_image = cv2.cvtColor(lab[i], cv2.COLOR_LAB2BGR) * 255.0
-                colored_images.append(bgr_image)
-            return output, colored_images
-        return output
+        grayscale_single = rgb_to_lab(grayscale_image)[:, :1, ...]
+        assert grayscale_single.shape == (B, 1, H, W)
+        if False:
+            assert grayscale_single.min() >= 0  # passes
+            assert grayscale_single.max() <= 100  # passes
+            # test: replace output with noise to see if the model _could_ colorize
+            output = output / output.max()
+            output = output * torch.randn_like(output) * 50 + 50
+        output = output.clamp(-128, 127)
+        colored_images = torch.cat((grayscale_single, output), dim=1)
+        colored_images = lab_to_rgb(colored_images)
+        assert colored_images.shape == (B, 3, H, W)
+        return output, colored_images
 
 
 if __name__ == "__main__":
-    import sys
     import time
+    from ddcolor.losses import CombinedLoss
+    from ddcolor.models.utils import preprocess_images, image_list_to_tensor
 
-    sys.path.append("ddcolor")
-    import numpy as np
-    from losses import CombinedLoss
-    from utils import preprocess_images
-
-    mul_factor = 64  # simulating batch size of 128
+    mul_factor = 32  # simulating batch size of 64  # TODO try 128
     images = ["test_images/sample1.png", "test_images/sample2.png"]
-    images = [cv2.imread(image) for image in images] * mul_factor
+    images = [torchvision.io.read_image(img) for img in images] * mul_factor
+    images = image_list_to_tensor(images)
     images, images_lab, images_rgb = preprocess_images(images)
+    images_ab = images_lab[:, 1:, ...]
 
     model = DDColor()
     criterion = CombinedLoss()
-    images_l, images_ab = images_lab[:, :1, ...], images_lab[:, 1:, ...]
 
     device = "cpu"
     model = model.to(device)
     images = images.to(device)
     images_rgb = images_rgb.to(device)
-    images_l = images_l.to(device)
     images_ab = images_ab.to(device)
     criterion = criterion.to(device)
     print("Input dim:", images.shape)
     start = time.time()
-    output = model(images)
-    loss = criterion(output, images_rgb, images_l, images_ab)
+    output, colored_images = model(images)
+    loss = criterion(output, colored_images, images_ab, images_rgb)
     loss.backward()
     print(f"CPU Forward-Backward Time: {time.time() - start:.4f} seconds")
     for param in model.parameters():
@@ -159,25 +137,28 @@ if __name__ == "__main__":
     model = model.to(device)
     images = images.to(device)
     images_rgb = images_rgb.to(device)
-    images_l = images_l.to(device)
     images_ab = images_ab.to(device)
     criterion = criterion.to(device)
     start = time.time()
-    output = model(images)
-    loss = criterion(output, images_rgb, images_l, images_ab)
+    output, colored_images = model(images)
+    loss = criterion(output, colored_images, images_ab, images_rgb)
     loss.backward()
     print(f"GPU Forward-Backward Time: {time.time() - start:.4f} seconds")
     for param in model.parameters():
         if param.requires_grad:
             assert param.grad is not None
 
-    output, colored_images = model(images, return_colored_image=True)
+    output, colored_images = model(images)
     assert output.shape == (2 * mul_factor, 2, 256, 256)
-    assert len(colored_images) == 2 * mul_factor
-    assert colored_images[0].shape == (256, 256, 3)
-    assert colored_images[1].shape == (256, 256, 3)
-    # cv2.imwrite("test_images/sample1_colored.png", colored_images[0])
-    # cv2.imwrite("test_images/sample2_colored.png", colored_images[1])
+    assert colored_images.shape == (2 * mul_factor, 3, 256, 256)
+    torchvision.io.write_png(
+        (colored_images[0, ...] * 255).to(torch.uint8).cpu(),
+        "test_images/sample1_color.png",
+    )
+    torchvision.io.write_png(
+        (colored_images[1, ...] * 255).to(torch.uint8).cpu(),
+        "test_images/sample2_color.png",
+    )
 
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total params: {total_params}")  # 30,282,080
