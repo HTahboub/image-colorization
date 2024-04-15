@@ -178,8 +178,8 @@ class ColorfulnessLoss(nn.Module):
     def forward(self, colorized_image: torch.Tensor) -> torch.Tensor:
         assert len(colorized_image.shape) == 4
         assert colorized_image.shape[1] == 3
-        # Convert the colorized image from BGR to rg-yb space
-        b, g, r = (
+        # Convert the colorized image from RGB to rg-yb space
+        r, g, b = (
             colorized_image[:, 0, :, :],
             colorized_image[:, 1, :, :],
             colorized_image[:, 2, :, :],

@@ -43,6 +43,7 @@ def train_one_epoch(
                 {
                     "epoch": epoch,
                     "iteration": i + epoch * len(data_loader),
+                    "learning_rate": optimizer.param_groups[0]["lr"],
                     "loss": loss.item(),
                 }
             )
@@ -144,9 +145,9 @@ if __name__ == "__main__":
     samples = image_list_to_tensor(sample_images).float()
     samples = get_transform()(samples)
 
-    wandb.init(project="ddcolor")
+    wandb.init(project="ddcolor", entity="color")
 
-    batch_size = 128  # 64
+    batch_size = 256
     lr = 1e-4
     device = torch.device("cuda")
     print("Loading data...")
@@ -157,7 +158,7 @@ if __name__ == "__main__":
     # decay lr by 0.5 after 1 epoch and every 0.5 epochs thereafter
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
     criterion = CombinedLoss().to(device)
-    epochs = 20
+    epochs = 50
     log_freq = 10
     sample_log_freq = 150
     train(

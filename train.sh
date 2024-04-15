@@ -2,7 +2,7 @@
 
 #SBATCH -N 1
 #SBATCH -n 1
-#SBATCH -t 3-0:0:0
+#SBATCH -t 7-0:0:0
 
 #SBATCH --gres=gpu:a6000:1
 #SBATCH --job-name=test_model
@@ -12,6 +12,8 @@
 #SBATCH -o /home/tahboub.h/logs/%j.log
 #SBATCH -e /home/tahboub.h/logs/%j.err
 
-module load anaconda3/2022.05
+module load cuda/12.1
+source "/shared/centos7/anaconda3/2022.05/etc/profile.d/conda.sh"
 conda activate color
-python ddcolor/train.py
+cd ~/image-colorization
+srun python ddcolor/train.py

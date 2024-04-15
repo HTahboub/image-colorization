@@ -32,7 +32,7 @@ def preprocess_images(
     the output tensors are grayscale images. Also returns the LAB and RGB images.
 
     Args:
-        images (torch.Tensor): Tensor of images of shape (B, 3, H, W), grayscale or BGR.
+        images (torch.Tensor): Tensor of images of shape (B, 3, H, W), grayscale or RGB.
 
     Returns:
         torch.Tensor: Grayscale image tensor of shape (B, 3, H, W).
