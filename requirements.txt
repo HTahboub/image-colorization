@@ -38,3 +38,4 @@ tqdm==4.66.2
 transformers==4.39.3
 typing_extensions==4.11.0
 urllib3==2.2.1
+kornia==0.7.2
