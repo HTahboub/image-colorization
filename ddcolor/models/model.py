@@ -107,7 +107,7 @@ if __name__ == "__main__":
     from ddcolor.losses import CombinedLoss
     from ddcolor.models.utils import preprocess_images, image_list_to_tensor
 
-    mul_factor = 32  # simulating batch size of 64  # TODO try 128
+    mul_factor = 32  # simulating batch size of 64  # TODO try 128 on a6000
     images = ["test_images/sample1.png", "test_images/sample2.png"]
     images = [torchvision.io.read_image(img) for img in images] * mul_factor
     images = image_list_to_tensor(images)
@@ -161,8 +161,8 @@ if __name__ == "__main__":
     )
 
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"Total params: {total_params}")  # 30,282,080
+    print(f"Total params: {total_params}")  # 34,610,730
     total_trainable_params = sum(
         p.numel() for p in model.parameters() if p.requires_grad
     )
-    print(f"Total trainable params: {total_trainable_params}")  # 2,461,952
+    print(f"Total trainable params: {total_trainable_params}")  # 6,790,602
