@@ -5,75 +5,72 @@ import numpy as np
 from tqdm import tqdm
 from scipy.linalg import sqrtm
 from skimage.metrics import peak_signal_noise_ratio
-from models.model import DDColor
-from models.utils import preprocess_images
+from ddcolor.models.model import DDColor
+from ddcolor.models.utils import preprocess_images
 from torchvision.models import inception_v3
 
 
-# Load pre-trained Inception model
 def load_inception_model():
-    # Load pre-trained Inception v3 model
-    inception_model = inception_v3(pretrained=True)
+    inception_model = inception_v3(pretrained=True, transform_input=False)
+    inception_model.fc = torch.nn.Identity()
     inception_model.eval()
-
-    # Preprocess function for Inception model
-    def preprocess(x):
-        x = x * 2 - 1  # Normalize to [-1, 1]
-        x = x.permute(0, 3, 1, 2)  # NHWC to NCHW
-        return x
-
-    # Define the feature extraction function
-    def get_features(x):
-        x = preprocess(x)
-        features = inception_model(x)
-        features = features.detach()
-        return features
-
-    return get_features
+    return inception_model
 
 
-def calculate_fid(real_images, generated_images, inception_model):
-    real_features = inception_model(real_images)
-    generated_features = inception_model(generated_images)
+def preprocess_inception(x):
+    x = (x + 1) / 2  # Rescale [-1,1] images to [0,1]
+    x = torch.nn.functional.interpolate(
+        x, size=(299, 299), mode="bilinear", align_corners=False
+    )
+    x = (
+        x - torch.tensor([0.485, 0.456, 0.406], device=x.device).view(1, 3, 1, 1)
+    ) / torch.tensor([0.229, 0.224, 0.225], device=x.device).view(1, 3, 1, 1)
+    return x
 
-    mu_real, sigma_real = np.mean(real_features, axis=0), np.cov(
+
+def get_features(images, model):
+    images = preprocess_inception(images)
+    with torch.no_grad():
+        features = model(images)
+    return features.cpu().numpy()
+
+
+def calculate_fid(real_features, generated_features):
+    mu_real, sigma_real = real_features.mean(axis=0), np.cov(
         real_features, rowvar=False
     )
-    mu_generated, sigma_generated = np.mean(generated_features, axis=0), np.cov(
+    mu_generated, sigma_generated = generated_features.mean(axis=0), np.cov(
         generated_features, rowvar=False
     )
 
-    sum_squared = np.sum((mu_real - mu_generated) ** 2.0)
-    covmean = sqrtm(sigma_real.dot(sigma_generated))
-
+    sum_squared_diff = np.sum((mu_real - mu_generated) ** 2)
+    covmean, _ = sqrtm(sigma_real.dot(sigma_generated), disp=False)
     if np.iscomplexobj(covmean):
         covmean = covmean.real
 
-    fid = sum_squared + np.trace(sigma_real + sigma_generated - 2.0 * covmean)
+    fid = sum_squared_diff + np.trace(sigma_real + sigma_generated - 2 * covmean)
     return fid
 
 
-def calculate_colorfulness(images):
-    colorfulness_scores = []
-    for image in images:
-        rg = np.sqrt(np.mean(np.square(image[:, :, 0] - image[:, :, 1])))
-        yb = np.sqrt(
-            np.mean(np.square(image[:, :, 2] - np.mean(image[:, :, 0:2], axis=2)))
-        )
-        colorfulness_scores.append(np.sqrt(rg**2 + yb**2) + 0.3 * np.mean(image))
-
-    return np.mean(colorfulness_scores)
+def calculate_colorfulness(image):
+    rg = np.std(image[:, :, 0] - image[:, :, 1])
+    yb = np.std(image[:, :, 2] - 0.5 * (image[:, :, 0] + image[:, :, 1]))
+    std_rgby = np.std([rg, yb])
+    mean_rgby = np.mean([rg, yb])
+    colorfulness = std_rgby + 0.3 * mean_rgby
+    return colorfulness
 
 
-def calculate_psnr(real_images, generated_images):
-    psnr_scores = []
-    for real_image, generated_image in zip(real_images, generated_images):
-        psnr_scores.append(peak_signal_noise_ratio(real_image, generated_image))
-
-    return np.mean(psnr_scores)
-
-
-def evaluate(model, test_dir, output_dir):
+def evaluate(model_checkpoint_path, test_dir, output_dir):
+    if not os.path.exists(model_checkpoint_path):
+        raise FileNotFoundError(f"Model checkpoint not found at {model_checkpoint_path}")
+    
+    if not os.path.exists(test_dir):
+        raise FileNotFoundError(f"Test directory not found at {test_dir}")
+    
+    model = DDColor()
+    model.load_state_dict(torch.load(model_checkpoint_path))
+    model.eval()
     inception_model = load_inception_model()
 
     if not os.path.exists(output_dir):
@@ -85,65 +82,42 @@ def evaluate(model, test_dir, output_dir):
         if f.endswith((".jpg", ".png"))
     ]
 
-    fid_scores = []
-    cf_scores = []
+    real_features = []
+    generated_features = []
+    colorfulness_scores = []
     psnr_scores = []
 
     for test_image in tqdm(test_images, desc="Evaluating"):
-        image = torchvision.io.read_image(test_image).unsqueeze(0)
-        image, _, _ = preprocess_images(image)
+        image = torchvision.io.read_image(test_image).float() / 255
+        image, _, _ = preprocess_images(image.unsqueeze(0))
+        with torch.no_grad():
+            _, output = model(image)
 
-        output, colored_images = model(image)
+        real_features.append(get_features(image, inception_model))
+        generated_features.append(get_features(output, inception_model))
 
-        assert output.shape == (
-            1,
-            2,
-            256,
-            256,
-        ), f"Output shape is incorrect: {output.shape}"
-
-        assert (
-            len(colored_images) == 1
-        ), f"Incorrect number of colorized images: {len(colored_images)}"
-        colored_image = colored_images[0, ...].permute(1, 2, 0).detach() * 255
-        colored_image = colored_image.numpy().astype(np.uint8)
-        assert colored_image.shape == (
-            256,
-            256,
-            3,
-        ), f"Colorized image shape is incorrect: {colored_image.shape}"
-
-        filename = os.path.basename(test_image)
-        output_path = os.path.join(output_dir, filename)
-        torchvision.io.write_png(
-            torch.tensor(colored_image).permute(2, 0, 1), output_path
-        )
-
-        # Calculate evaluation metrics
-        real_image = torchvision.io.read_image(test_image).permute(1, 2, 0).numpy()
-        fid_scores.append(
-            calculate_fid(
-                np.expand_dims(real_image, 0),
-                np.expand_dims(colored_image, 0),
-                inception_model,
-            )
-        )
-        cf_scores.append(calculate_colorfulness(np.expand_dims(colored_image, 0)))
+        output_image = output.squeeze().permute(1, 2, 0).numpy()
+        colorfulness_scores.append(calculate_colorfulness(output_image))
         psnr_scores.append(
-            calculate_psnr(
-                np.expand_dims(real_image, 0), np.expand_dims(colored_image, 0)
+            peak_signal_noise_ratio(
+                image.squeeze().permute(1, 2, 0).numpy(), output_image
             )
         )
 
-    # Print average evaluation metrics
-    print(f"Average FID: {np.mean(fid_scores)}")
-    print(f"Average Colorfulness Score: {np.mean(cf_scores)}")
-    print(f"Average PSNR: {np.mean(psnr_scores)}")
+    real_features = np.vstack(real_features)
+    generated_features = np.vstack(generated_features)
+
+    fid_score = calculate_fid(real_features, generated_features)
+    avg_colorfulness = np.mean(colorfulness_scores)
+    avg_psnr = np.mean(psnr_scores)
+
+    print(f"Average FID: {fid_score}")
+    print(f"Average Colorfulness Score: {avg_colorfulness}")
+    print(f"Average PSNR: {avg_psnr}")
 
 
 if __name__ == "__main__":
-    model = DDColor()
+    model_checkpoint_path = "ddcolor_checkpoint_8.pth"
     test_dir = "test_images"
-    output_dir = "colorized_images"
-
-    evaluate(model, test_dir, output_dir)
+    output_dir = "output_images"
+    evaluate(model_checkpoint_path, test_dir, output_dir)
