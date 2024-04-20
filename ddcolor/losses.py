@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import vgg16
 import torchvision.models as models
+from torchvision.models import vgg16
 from torchvision.models.resnet import ResNet18_Weights
 
 
@@ -21,35 +21,49 @@ class CombinedLoss(nn.Module):
         self.colorfulness_weight = colorfulness_weight
         self.pixel_loss = PixelLoss()
         self.perceptual_loss = PerceptualLoss()
-        # self.adversarial_loss = AdversarialLoss()
-        # self.colorfulness_loss = ColorfulnessLoss()
+        self.adversarial_loss = AdversarialLoss()
+        self.colorfulness_loss = ColorfulnessLoss()
 
     def forward(
         self,
-        colorized_image: torch.Tensor,
-        ground_truth: torch.Tensor,
+        image_ab: torch.Tensor,
+        image_rgb: torch.Tensor,
+        ground_truth_ab: torch.Tensor,
+        ground_truth_rgb: torch.Tensor,
     ) -> torch.Tensor:
         """Computes the combined loss between the colorized image and the ground truth
         image, which is a weighted sum of the pixel loss, perceptual loss, adversarial
         loss, and colorfulness loss.
 
         Args:
-            colorized_image (torch.Tensor): The colorized image, shape (B, C, H, W)
-            ground_truth (torch.Tensor): The ground truth image, shape (B, C, H, W)
+            image_ab (torch.Tensor): The colorized image in the AB channels of the Lab
+                color space, shape (B, 2, H, W).
+            image_rgb (torch.Tensor): The colorized image in the RGB color space, shape
+                (B, 3, H, W).
+            ground_truth_ab (torch.Tensor): The ground truth image in the AB channels of
+                the Lab color space, shape (B, 2, H, W).
+            ground_truth_rgb (torch.Tensor): The ground truth image in the RGB color
+                space, shape (B, 3, H, W).
 
         Returns:
             torch.Tensor: The combined loss between the colorized image and the ground
                 truth image as a scalar tensor.
         """
-        pixel_loss = self.pixel_loss(colorized_image, ground_truth)
-        perceptual_loss = self.perceptual_loss(colorized_image, ground_truth)
-        # adversarial_loss = self.adversarial_loss(colorized_image)
-        # colorfulness_loss = self.colorfulness_loss(colorized_image)
+        assert image_ab.shape == ground_truth_ab.shape
+        assert image_rgb.shape == ground_truth_rgb.shape
+        assert len(image_ab.shape) == 4
+        assert image_ab.shape[1] == 2
+        assert image_rgb.shape[1] == 3
+        assert image_ab.shape[0] == image_rgb.shape[0]
+        pixel_loss = self.pixel_loss(image_ab, ground_truth_ab)
+        perceptual_loss = self.perceptual_loss(image_rgb, ground_truth_rgb)
+        adversarial_loss = self.adversarial_loss(ground_truth_rgb, image_rgb)
+        colorfulness_loss = self.colorfulness_loss(image_rgb)
         return (
             self.pixel_weight * pixel_loss
             + self.perceptual_weight * perceptual_loss
-            # + self.adversarial_weight * adversarial_loss
-            # + self.colorfulness_weight * colorfulness_loss
+            + self.adversarial_weight * adversarial_loss
+            + self.colorfulness_weight * colorfulness_loss
         )
 
 
@@ -61,26 +75,33 @@ class PixelLoss(nn.Module):
         self, colorized_image: torch.Tensor, ground_truth: torch.Tensor
     ) -> torch.Tensor:
         """Computes the pixel loss between the colorized image and the ground truth
-        image, defined as L1 distance between the two images.
+        image, defined as L1 distance between the two images. The images are assumed to
+        be the AB channels of the Lab color space.
 
         Args:
-            colorized_image (torch.Tensor): The colorized image, shape (B, C, H, W)
-            ground_truth (torch.Tensor): The ground truth image, shape (B, C, H, W)
+            colorized_image (torch.Tensor): The colorized image, shape (B, 2, H, W)
+            ground_truth (torch.Tensor): The ground truth image, shape (B, 2, H, W)
 
         Returns:
             torch.Tensor: The pixel loss between the colorized image and the ground
                 truth image as a scalar tensor.
         """
+        assert colorized_image.shape == ground_truth.shape
+        assert len(colorized_image.shape) == 4
+        assert colorized_image.shape[1] == 2
         return F.l1_loss(colorized_image, ground_truth)
 
 
 class PerceptualLoss(nn.Module):
     def __init__(self):
         super().__init__()
-        self.vgg = vgg16(weights="IMAGENET1K_FEATURES")  # TODO try vgg19?
+        self.vgg = vgg16(weights="IMAGENET1K_FEATURES")  # TODO try vgg19? try small?
         self.vgg.forward = lambda x: self.vgg.avgpool(self.vgg.features(x))
         self.maxpool = nn.MaxPool2d(7)  # NOTE this maxpool may not be necessary
         del self.vgg.classifier
+        self.vgg.eval()
+        for param in self.vgg.parameters():
+            param.requires_grad = False
 
     def forward(
         self, colorized_image: torch.Tensor, ground_truth: torch.Tensor
@@ -99,6 +120,9 @@ class PerceptualLoss(nn.Module):
             torch.Tensor: The perceptual loss between the colorized image and the ground
                 truth image as a scalar tensor.
         """
+        assert colorized_image.shape == ground_truth.shape
+        assert len(colorized_image.shape) == 4
+        assert colorized_image.shape[1] == 3
         colorized_features = self.vgg(colorized_image)
         colorized_features = self.maxpool(colorized_features).squeeze((2, 3))
         ground_truth_features = self.vgg(ground_truth)
@@ -128,6 +152,9 @@ class AdversarialLoss(nn.Module):
         self.criterion = nn.BCEWithLogitsLoss()
 
     def forward(self, real_images, fake_images):
+        assert real_images.shape == fake_images.shape
+        assert len(real_images.shape) == 4
+        assert real_images.shape[1] == 3
         # Forward pass for real images
         real_outputs = self.resnet(real_images)
         real_labels = torch.ones_like(real_outputs)
@@ -149,8 +176,10 @@ class ColorfulnessLoss(nn.Module):
         super().__init__()
 
     def forward(self, colorized_image: torch.Tensor) -> torch.Tensor:
-        # Convert the colorized image from RGB to rg-yb space
-        r, g, b = (
+        assert len(colorized_image.shape) == 4
+        assert colorized_image.shape[1] == 3
+        # Convert the colorized image from BGR to rg-yb space
+        b, g, r = (
             colorized_image[:, 0, :, :],
             colorized_image[:, 1, :, :],
             colorized_image[:, 2, :, :],
@@ -183,28 +212,61 @@ class ColorfulnessLoss(nn.Module):
 
 
 if __name__ == "__main__":
-    dummy = torch.randn(4, 3, 256, 256)
-    dummy_gt = torch.randn(4, 3, 256, 256)
+    dummy_ab = torch.randn(4, 2, 256, 256).cuda()
+    dummy_rgb = torch.randn(4, 3, 256, 256).cuda()
+    dummy_gt_ab = torch.randn(4, 2, 256, 256).cuda()
+    dummy_gt_rgb = torch.randn(4, 3, 256, 256).cuda()
 
-    pixel_loss = PixelLoss()
-    perceptual_loss = PerceptualLoss()
-    adversarial_loss = AdversarialLoss()
-    colorfulness_loss = ColorfulnessLoss()
+    pixel_loss = PixelLoss().cuda()
+    perceptual_loss = PerceptualLoss().cuda()
+    adversarial_loss = AdversarialLoss().cuda()
+    colorfulness_loss = ColorfulnessLoss().cuda()
+    combined_loss = CombinedLoss().cuda()
 
-    loss_1 = pixel_loss(dummy, dummy_gt)
-    loss_2 = perceptual_loss(dummy, dummy_gt)
-    loss_3 = adversarial_loss(dummy, dummy_gt)
-    loss_4 = colorfulness_loss(dummy)
+    loss_1 = pixel_loss(dummy_ab, dummy_gt_ab)
+    loss_2 = perceptual_loss(dummy_rgb, dummy_gt_rgb)
+    loss_3 = adversarial_loss(dummy_gt_rgb, dummy_rgb)
+    loss_4 = colorfulness_loss(dummy_rgb)
+    loss = combined_loss(dummy_ab, dummy_rgb, dummy_gt_ab, dummy_gt_rgb)
 
     assert loss_1.shape == torch.Size([])
     assert loss_2.shape == torch.Size([])
     assert loss_3.shape == torch.Size([])
     assert loss_4.shape == torch.Size([])
+    assert loss.shape == torch.Size([])
 
     print(f"Pixel loss: {loss_1:.4f}")
     print(f"Perceptual loss: {loss_2:.4f}")
     print(f"Adversarial loss: {loss_3:.4f}")
     print(f"Colorfulness loss: {loss_4:.4f}")
+    print(f"Combined loss: {loss:.4f}")
 
-    assert pixel_loss(dummy, dummy) == 0
-    assert perceptual_loss(dummy, dummy) == 0
+    assert pixel_loss(dummy_ab, dummy_ab) == 0
+    assert perceptual_loss(dummy_rgb, dummy_rgb) == 0
+
+    from time import time
+
+    start = time()
+    for _ in range(100):
+        pixel_loss(dummy_ab, dummy_gt_ab)
+    print(f"\nPixel loss time: {time() - start:.4f}")
+
+    start = time()
+    for _ in range(100):
+        perceptual_loss(dummy_rgb, dummy_gt_rgb)
+    print(f"Perceptual loss time: {time() - start:.4f}")
+
+    start = time()
+    for _ in range(100):
+        adversarial_loss(dummy_gt_rgb, dummy_rgb)
+    print(f"Adversarial loss time: {time() - start:.4f}")
+
+    start = time()
+    for _ in range(100):
+        colorfulness_loss(dummy_rgb)
+    print(f"Colorfulness loss time: {time() - start:.4f}")
+
+    start = time()
+    for _ in range(100):
+        combined_loss(dummy_ab, dummy_rgb, dummy_gt_ab, dummy_gt_rgb)
+    print(f"Combined loss time: {time() - start:.4f}")
