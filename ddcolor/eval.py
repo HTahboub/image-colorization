@@ -14,6 +14,7 @@ def load_inception_model():
     inception_model = inception_v3(pretrained=True, transform_input=False)
     inception_model.fc = torch.nn.Identity()
     inception_model.eval()
+    print("Loaded Inception model")
     return inception_model
 
 
@@ -70,6 +71,8 @@ def evaluate(model_checkpoint_path, test_dir, output_dir):
     
     model = DDColor()
     model.load_state_dict(torch.load(model_checkpoint_path))
+    print(f"Loaded model from {model_checkpoint_path}")
+
     model.eval()
     inception_model = load_inception_model()
 
@@ -107,6 +110,7 @@ def evaluate(model_checkpoint_path, test_dir, output_dir):
     real_features = np.vstack(real_features)
     generated_features = np.vstack(generated_features)
 
+    print("Evaluating model performance...")
     fid_score = calculate_fid(real_features, generated_features)
     avg_colorfulness = np.mean(colorfulness_scores)
     avg_psnr = np.mean(psnr_scores)
@@ -120,4 +124,9 @@ if __name__ == "__main__":
     model_checkpoint_path = "ddcolor_checkpoint_8.pth"
     test_dir = "test_images"
     output_dir = "output_images"
-    evaluate(model_checkpoint_path, test_dir, output_dir)
+    checkpoint_dir = "checkpoints"
+    
+    for checkpoint in os.listdir(checkpoint_dir):
+        model_checkpoint_path = os.path.join(checkpoint_dir, checkpoint)
+        evaluate(model_checkpoint_path, test_dir, output_dir)
+        print(f"Evaluations for {model_checkpoint_path}")
